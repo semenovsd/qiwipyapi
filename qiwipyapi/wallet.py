@@ -9,7 +9,7 @@ import uuid
 import requests
 from requests import RequestException
 
-from .exceptions import QiwiMainException
+from .exceptions import QiwiException, check_exception
 
 
 class Wallet:
@@ -74,8 +74,6 @@ class Wallet:
         :raises:
             QiwiException: if some errors in response
         """
-        # Думаю логика работы обработчика ответа должна быть такая:
-        # Если ответ не 200 или 201, то вызываем методы класса ошибки, который уже определяет ошибку и её кидает
         if response.status_code == 200 or response.status_code == 201:
             try:
                 response_json = response.json()
@@ -83,7 +81,8 @@ class Wallet:
             except AttributeError:
                 return response
         else:
-            raise QiwiMainException(requests, response)
+            e = check_exception(response)
+            raise QiwiException(e, response, self._session.params)
 
     # Профиль пользователя https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#profile
 
