@@ -24,9 +24,9 @@ class Wallet:
     :return: New wallet
     """
 
-    def __init__(self, wallet_number, wallet_token=None, p2p_token=None):
+    def __init__(self, wallet_number, wallet_token=None, p2p_sec_key=None):
         try:
-            assert wallet_token or p2p_token
+            assert wallet_token or p2p_sec_key
         except AssertionError:
             raise AssertionError('Enter wallet_token and/or p2p_token')
         else:
@@ -36,11 +36,11 @@ class Wallet:
                 self._HEADERS = {'Accept': 'application/json',
                                  'Content-Type': 'application/json',
                                  'Authorization': f'Bearer {wallet_token}'}
-            if p2p_token:
-                self._P2P_SEC_KEY = p2p_token
+            if p2p_sec_key:
+                self._P2P_SEC_KEY = p2p_sec_key
                 self._P2P_HEADERS = {'Accept': 'application/json',
                                      'Content-Type': 'application/json',
-                                     'Authorization': f'Bearer {p2p_token}'}
+                                     'Authorization': f'Bearer {p2p_sec_key}'}
             self._session = requests.Session()
             # TODO add timeout and proxy
 
@@ -58,11 +58,8 @@ class Wallet:
             response = self._session.request(method=method, url=request_url, headers=kwargs.get('headers'),
                                              params=kwargs.get('params'), data=kwargs.get('data'),
                                              json=kwargs.get('json'))
-        except RequestException:
-            # timeout exception ?
-            # make recursive call??? sleep and restart?
-            # make trace to qiwi api
-            raise RequestException
+        except RequestException as e:
+            raise RequestException(e, method, request_url, kwargs)
         else:
             return self._response(response)
 
@@ -84,35 +81,22 @@ class Wallet:
             e = check_exception(response)
             raise QiwiException(e, response, self._session.params)
 
-    # Профиль пользователя https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#profile
-
-    # Идентификация пользователя https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#ident
-
-    # Данные идентификации https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#ident_data
-
-    # Лимиты QIWI Кошелька https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#limits
-
-    # Проверка ограничений исходящих платежей с QIWI Кошелька
-    # https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#restrictions
-
-    def create_invoice(self, value: float, bill_id=None, currency='RUB',
+    # P2P QIWI API
+    def create_invoice(self, amount: dict, bill_id=None,
                        expiration_date_time=datetime.now(tz=tzlocal()) + timedelta(hours=8), **kwargs):
         """ Выставить новый счёт
         https://developer.qiwi.com/ru/p2p-payments/#create
 
-        :param value:
-        :param bill_id:
-        :param currency:
+        :param amount: данные о сумме счета
+        :param bill_id: уникальный идентификатор счета в вашей системе
         :param expiration_date_time:
-        :param kwargs:
+        :param kwargs: дополнительные параметры
         :return: ??? подумать, что именно возвращать (урл или весь ответ) или вообще отдавать объект
         """
         method = 'put'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id if bill_id else uuid.uuid1()}'
         json_data = dict()
-        json_data['amount'] = dict()
-        json_data['amount']['value'] = value
-        json_data['amount']['currency'] = currency
+        json_data.update(amount)
         json_data['expirationDateTime'] = expiration_date_time.strftime('%Y-%m-%dT%H:%m:%S+00:00')
         json_data.update(kwargs)
         # При выставление счёта в ответе приходит payUrl к ссылке можно добавить параметры:
@@ -127,7 +111,7 @@ class Wallet:
         """ Проверка счёта
         https://developer.qiwi.com/ru/p2p-payments/#invoice-status
 
-        :param bill_id:
+        :param bill_id: уникальный идентификатор счета в вашей системе.
         :return:
         :raises:
             RequestException: если счёта нет
@@ -141,13 +125,112 @@ class Wallet:
         """ Отмена счёта
         https://developer.qiwi.com/ru/p2p-payments/#cancel
 
-        :param bill_id:
+        :param bill_id: уникальный идентификатор счета в вашей системе.
         :return:
         """
         method = 'post'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id}/reject'
         # TODO возвращать True в случае успеха и кидать ошибку, если такого счёта нет.
         return self._request(method, request_url, headers=self._P2P_HEADERS)
+
+    # Wallet Qiwi API
+    def wallet_profile(self, authInfoEnabled: bool = True, contractInfoEnabled: bool = True,
+                       userInfoEnabled: bool = True):
+        """ Метод возвращает информацию о вашем профиле - наборе пользовательских данных и настроек вашего QIWI кошелька.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#profile
+
+        :param authInfoEnabled: логический признак выгрузки настроек авторизации.
+        :param contractInfoEnabled: логический признак выгрузки данных о вашем QIWI кошельке.
+        :param userInfoEnabled: логический признак выгрузки прочих пользовательских данных.
+        :return:
+        """
+        method = 'get'
+        params = f'authInfoEnabled={authInfoEnabled}&' \
+                 f'contractInfoEnabled={contractInfoEnabled}&' \
+                 f'userInfoEnabled={userInfoEnabled}'
+        request_url = f'/person-profile/v1/profile/current'
+        return self._request(method, request_url, headers=self._HEADERS, params=params)
+
+    def ident(self, birthDate: str, firstName: str, middleName: str, lastName: str, passport: str, inn: str = None,
+              snils: str = None, oms: str = None) -> dict:
+        """ Данный метод позволяет отправить данные для идентификации вашего QIWI кошелька.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#ident
+
+        :param birthDate: Дата рождения пользователя (в формате "ГГГГ-ММ-ДД")
+        :param firstName: Имя пользователя
+        :param middleName: Отчество пользователя
+        :param lastName: Фамилия пользователя
+        :param passport: Серия и номер паспорта пользователя (только цифры) xxxx xxxxxx
+        :param inn: ИНН пользователя
+        :param snils: Номер СНИЛС пользователя
+        :param oms: Номер полиса ОМС пользователя
+        :return:
+        :exception:
+            AssertionError: Если не указан один из параметров: ИНН, СНИЛС, ОМС
+        """
+        try:
+            assert inn or snils or oms
+        except AssertionError:
+            raise AssertionError('Укажите минимум один из параметров: ИНН, СНИЛС, ОМС')
+        method = 'post'
+        request_url = f'/identification/v1/persons/{self._WALLET_NUMBER}/identification'
+        json_data = dict()
+        json_data['birthDate'] = birthDate
+        json_data['firstName'] = firstName
+        json_data['middleName'] = middleName
+        json_data['lastName'] = lastName
+        json_data['passport'] = passport
+        json_data['inn'] = inn
+        json_data['snils'] = snils
+        json_data['oms'] = oms
+        return self._request(method, request_url, headers=self._HEADERS, json=json_data)
+
+    def ident_data(self) -> dict:
+        """ Данный метод позволяет выгрузить маскированные данные и статус идентификации своего QIWI кошелька.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#ident_data
+
+        :return:
+        """
+        method = 'get'
+        request_url = f'/identification/v1/persons/{self._WALLET_NUMBER}/identification'
+        return self._request(method, request_url, headers=self._HEADERS)
+
+    def limits(self, types: list) -> dict:
+        """ Метод возвращает текущие уровни лимитов по операциям в вашем QIWI кошельке.
+        Лимиты действуют как ограничения на сумму определенных операций.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#limits
+
+        :param types: list of:
+            EFILL - максимальный допустимый остаток на счёте
+            TURNOVER - оборот в месяц
+            PAYMENTS_P2P - переводы на другие кошельки в месяц
+            PAYMENTS_PROVIDER_INTERNATIONALS - платежи в адрес иностранных компаний в месяц
+            PAYMENTS_PROVIDER_PAYOUT - Переводы на банковские счета и карты, кошельки других систем
+            WITHDRAW_CASH - снятие наличных в месяц. Должен быть указан хотя бы один тип операций.
+        :return:
+        :exception:
+            AssertionError: Если не указан один из параметров: ИНН, СНИЛС, ОМС
+        """
+        try:
+            assert types
+        except AssertionError:
+            raise AssertionError('Задайте список типов операций, по которым запрашиваются лимиты.')
+        method = 'get'
+        request_url = f'/qw-limits/v1/persons/{self._WALLET_NUMBER}/actual-limits'
+        params = {}
+        for i, operation in enumerate(types):
+            params['types[' + str(i) + ']'] = operation
+        return self._request(method, request_url, headers=self._HEADERS, params=params)
+
+    def restrictions(self) -> dict:
+        """ Проверка ограничений исходящих платежей с QIWI Кошелька
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#restrictions
+
+        :return:
+        """
+        method = 'get'
+        request_url = f'person-profile/v1/persons/{self._WALLET_NUMBER}/status/restrictions'
+        return self._request(method, request_url, headers=self._HEADERS)
 
     def payments_history(self, rows: int = 10, operation='ALL', sources=None) -> list:
         """ История платежей
