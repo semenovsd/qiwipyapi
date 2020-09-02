@@ -9,7 +9,7 @@ import uuid
 import requests
 from requests import RequestException
 
-from .exceptions import QiwiException, check_exception
+from .exceptions import QiwiError, payment_history_exception, PaymentHistoryError, main_exception
 
 
 class Wallet:
@@ -44,6 +44,8 @@ class Wallet:
             self._session = requests.Session()
             # TODO add timeout and proxy
 
+    # TODO __rerp__
+
     def _request(self, method, request_url, **kwargs):
         """ Запрос на сервер API
 
@@ -71,15 +73,15 @@ class Wallet:
         :raises:
             QiwiException: if some errors in response
         """
-        if response.status_code == 200 or response.status_code == 201:
+        if response.status_code in [200, 201]:
             try:
                 response_json = response.json()
                 return response_json
             except AttributeError:
                 return response
         else:
-            e = check_exception(response)
-            raise QiwiException(e, response, self._session.params)
+            e = main_exception(response)
+            raise QiwiError(e, response, self._session.params)  # or self.session.__dict__ ?
 
     # P2P QIWI API
     def create_invoice(self, amount: dict, bill_id=None,
@@ -252,7 +254,11 @@ class Wallet:
         # Возможно имеет смысл сделать отдельную ошибку и выводить код ошибки и описание
         # Или делать на каждую ошибку своё исключение
         # https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
-        return self._request(method, request_url, headers=self._HEADERS, params=params).get('data')
+        r = self._request(method, request_url, headers=self._HEADERS, params=params).get('data')
+        if r == '':  # ответ получен без ошибки, но данные пусты
+            e = payment_history_exception(r)
+            raise PaymentHistoryError(e)
+        return r
 
     def search_provider_for_card(self, card_number):
         """ Поиск провайдера для перевода на карту
@@ -341,5 +347,3 @@ class Wallet:
     # Оплата счета https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
 
     # Отмена неоплаченного счета https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
-
-    # Web Hooks ???

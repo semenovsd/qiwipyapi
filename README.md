@@ -8,4 +8,18 @@ pip install qiwipyapi
 # Use
 from qiwipyapi import Wallet
 
-wallet = Wallet( wallet_number, wallet_token, p2p_sec_key)
+\# для работы с QIWI Wallet API - wallet_toke и/или для QIWI P2P APi - p2p_sec_key
+
+wallet = Wallet(wallet_number, wallet_token, p2p_sec_key)
+
+# Методы P2P Qiwi API
+Выставить счет для оплаты:
+
+bill = wallet.create_bill()
+print(bill['payUrl'])  # link to payment from
+
+# Проверить стату счёта
+
+
+# Отменить выставленный счёт
+
