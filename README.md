@@ -15,7 +15,7 @@ wallet = Wallet(wallet_number, wallet_token, p2p_sec_key)
 # Методы P2P Qiwi API
 Выставить счет для оплаты:
 
-bill = wallet.create_bill()
+bill = wallet.create_invoice()
 print(bill['payUrl'])  # link to payment from
 
 # Проверить стату счёта

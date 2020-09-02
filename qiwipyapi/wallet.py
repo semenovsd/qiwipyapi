@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 
 # import logging
-# TODO different levels logs
+# TODO logs
 from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
 import uuid
 import requests
 from requests import RequestException
 
-from .exceptions import QiwiError, payment_history_exception, PaymentHistoryError, main_exception
+from .exceptions import QiwiError, payment_history_exception, PaymentHistoryError, main_exception, QiwiServerError
 
 
 class Wallet:
@@ -51,7 +51,7 @@ class Wallet:
 
         :param method:
         :param request_url:
-        :param kwargs:
+        :param kwargs: Any of headers, params, data, json
         :return:
         :raises:
             RequestException: if some errors in request
@@ -60,6 +60,10 @@ class Wallet:
             response = self._session.request(method=method, url=request_url, headers=kwargs.get('headers'),
                                              params=kwargs.get('params'), data=kwargs.get('data'),
                                              json=kwargs.get('json'))
+        except QiwiServerError:
+            # TODO Pattern Retry
+            # second retry after 5 sec
+            pass
         except RequestException as e:
             raise RequestException(e, method, request_url, kwargs)
         else:
@@ -85,7 +89,7 @@ class Wallet:
 
     # P2P QIWI API
     def create_invoice(self, amount: dict, bill_id=None,
-                       expiration_date_time=datetime.now(tz=tzlocal()) + timedelta(hours=8), **kwargs):
+                       expiration_date_time=datetime.now(tz=tzlocal()) + timedelta(hours=1), **kwargs):
         """ Выставить новый счёт
         https://developer.qiwi.com/ru/p2p-payments/#create
 
@@ -102,11 +106,13 @@ class Wallet:
         json_data['expirationDateTime'] = expiration_date_time.strftime('%Y-%m-%dT%H:%m:%S+00:00')
         json_data.update(kwargs)
         # При выставление счёта в ответе приходит payUrl к ссылке можно добавить параметры:
-        # https: // developer.qiwi.com / ru / p2p - payments /  # option
+        # https://developer.qiwi.com/ru/p2p-payments/  # option
         # paySource
         # allowedPaySources
         # successUrl
         # lifetime
+        # TODO Можно сделать отдельный класс для счёта и определить __rerp__, что бы можно было выводить
+        #  ссылку и иметь доступк ко всем атрибутам счёта
         return self._request(method, request_url, headers=self._P2P_HEADERS, json=json_data)
 
     def invoice_status(self, bill_id):
@@ -260,6 +266,74 @@ class Wallet:
             raise PaymentHistoryError(e)
         return r
 
+    def payment_stat(self, start_date: datetime, end_date: datetime, operation: str = 'ALL', source: list = None):
+        """ Статистика платежей
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#stat
+
+        Дату можно указать в любой временной зоне TZD (формат ГГГГ-ММ-ДД'T'чч:мм:ссTZD),
+        однако она должна совпадать с временной зоной в параметре endDate.
+        Обозначение временной зоны TZD: +чч:мм или -чч:мм (временной сдвиг от GMT).
+
+        :param start_date: Начальная дата периода статистики. Обязательный параметр.
+        :param end_date: Конечная дата периода статистики. Обязательный параметр.
+        :param operation: Тип операций, учитываемых при подсчете статистики.
+        :param source: Источники платежа, по которым вернутся данные.
+        :return:
+        """
+        method = 'get'
+        request_url = f'/payment-history/v2/persons/{self._WALLET_NUMBER}/payments/total'
+        params = dict()
+        params['startDate'] = start_date
+        params['endDate'] = end_date
+        params['operation'] = operation
+        params['source'] = source
+        return self._request(method, request_url, headers=self._HEADERS, params=params)
+
+    def transactions_info(self, transaction_id, type: str = None):
+        """ Информация о транзакции
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#txn_info
+
+        :param transaction_id: номер транзакции из истории платежей (параметр data[].txnId в ответе).
+        :param type: тип транзакции из истории платежей (параметр data[].type в ответе). Optional.
+        :return:
+        """
+        method = 'get'
+        request_url = f'/payment-history/v2/transactions/{transaction_id}?type={type}'
+        # TODO if not transaction raise error
+        return self._request(method, request_url, headers=self._HEADERS)['Transaction']
+
+    def cheque_file(self, transaction_id, type: str = None, format: str = 'PDF'):
+        """ Данный метод используется для получения электронной квитанции (чека) по определенной транзакции
+        из вашей истории платежей в формате PDF/JPEG в виде файла
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#payment_receipt
+
+        :param transaction_id: номер транзакции из истории платежей (параметр data[].txnId в ответе).
+        :param type: тип транзакции из истории платежей (параметр data[].type в ответе).
+        :param format: тип файла, в который сохраняется квитанция. Допустимые значения: JPEG, PDF
+        :return: Успешный ответ содержит файл выбранного формата в бинарном виде.
+        """
+        method = 'get'
+        request_url = f'/payment-history/v1/transactions/{transaction_id}/cheque/file?type={type}&format={format}'
+        # response in binary format
+        return self._request(method, request_url, headers=self._HEADERS)
+
+    def cheque_to_email(self, transaction_id, type: str, email: str):
+        """ Данный метод используется для получения электронной квитанции (чека) по определенной транзакции
+        из вашей истории платежей в формате PDF/JPEG в виде файла почтовым сообщением на заданный e-mail.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#payment_receipt
+
+        :param transaction_id: номер транзакции из истории платежей (параметр data[].txnId в ответе).
+        :param type: тип транзакции из истории платежей (параметр data[].type в ответе).
+        :param email: Адрес для отправки электронной квитанции.
+        :return: Успешный ответ содержит HTTP-код результата операции отправки файла.
+        """
+        method = 'post'
+        request_url = f'/payment-history/v1/transactions/{transaction_id}/cheque/send'
+        json_data = dict()
+        json_data['type'] = type
+        json_data['email'] = email
+        return self._request(method, request_url, headers=self._HEADERS, json=json_data)
+
     def search_provider_for_card(self, card_number):
         """ Поиск провайдера для перевода на карту
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
@@ -303,15 +377,6 @@ class Wallet:
     # Запрос доступных счетов https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#funding_offer
 
     # Установка баланса по умолчанию https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#default_balance
-
-    # Статистика платежей https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#stat
-
-    # Информация о транзакции https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#txn_info
-
-    # def Квитанция платежа https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#payment_receipt
-
-    # def Информация о транзакции
-    #     Есть отдельные ошибки описанные в https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
 
     # def check_commission(self):
     # Узнать комиссию https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#rates

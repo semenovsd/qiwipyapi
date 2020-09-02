@@ -6,6 +6,10 @@ class QiwiError(Exception):
     pass
 
 
+class QiwiServerError(Exception):
+    pass
+
+
 class PaymentHistoryError(Exception):
     pass
 
@@ -21,7 +25,9 @@ exception_codes = {'400': 'Ошибка синтаксиса запроса (н�
 
 def main_exception(response):
     # TODO make check method for choice errors dict
-    if response.status_code == 404:
+    if response.get('status_code') == 500:
+        raise QiwiServerError()
+    if response.get('status_code') == 404:
         return {response.status_code: f'{response.serviceName} {response.errorCode} {response.description}'}
     # {
     #     "serviceName": "invoicing",
