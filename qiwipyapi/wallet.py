@@ -370,13 +370,52 @@ class Wallet:
         # TODO кидать ошибку, если не хватает денег и всё что не связанно с корректностью данных
         return self._request(method, request_url, headers=self._HEADERS, json=json_data).get('PaymentInfo')
 
-    # def Список балансов https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balances_list
+    def get_balances(self) -> list:
+        """ Список балансов
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balances_list
 
-    # def Создание баланса https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balance_create
+        :return: Ответ содержит массив счетов вашего QIWI Кошелька для фондирования платежей и текущие балансы счетов.
+        """
+        method = 'get'
+        request_url = f'/funding-sources/v2/persons/{self._WALLET_NUMBER}/accounts'
+        return self._request(method, request_url, headers=self._HEADERS)
 
-    # Запрос доступных счетов https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#funding_offer
+    def balance_create(self, alias: str):
+        """ Создание баланса. Метод создает новый счет и баланс в вашем QIWI Кошельке.
+        Список доступных для создания счетов можно получить с помощью метода funding_offer.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balance_create
 
-    # Установка баланса по умолчанию https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#default_balance
+        :param alias: Псевдоним нового счета (см. запрос доступных счетов)
+        :return: Успешный ответ содержит HTTP-код 201.
+        """
+        method = 'post'
+        request_url = f'/funding-sources/v2/persons/{self._WALLET_NUMBER}/accounts'
+        json_data = {'alias': alias}
+        return self._request(method, request_url, headers=self._HEADERS, json=json_data)
+
+    def funding_offer(self) -> object:
+        """ Запрос доступных счетов. Метод отображает псевдонимы счетов, доступных для создания в вашем QIWI Кошельке.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#funding_offer
+
+        :return: Успешный твет содержит данные о счетах, которые можно создать.
+        """
+        method = 'get'
+        request_url = f'/funding-sources/v2/persons/{self._WALLET_NUMBER}/accounts/offer'
+        return self._request(method, request_url, headers=self._HEADERS)
+
+    def default_account(self, account_alias: str, default: bool = True):
+        """ Установка баланса по умолчанию.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#default_balance
+
+        :param account_alias: Псевдоним счета в кошельке из списка счетов (параметр accounts[].alias в ответе).
+        :param default: Признак установки счета по умолчанию.
+        :return: Успешный ответ содержит HTTP-код 204.
+        """
+        method = 'patch'
+        request_url = f'/funding-sources/v2/persons/{self._WALLET_NUMBER}/accounts/{account_alias}'
+        jason_data = {'defaultAccount': default}
+        # TODO change response to bool ?
+        return self._request(method, request_url, headers=self._HEADERS, json=jason_data)
 
     # def check_commission(self):
     # Узнать комиссию https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#rates
