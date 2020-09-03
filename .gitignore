@@ -229,5 +229,7 @@ GitHub.sublime-settings
 *.pem
 *.key
 
-# my bash script
+# My Dev files for testing
 restart.bash
+test.ty
+/qiwipyapi/utils.py
