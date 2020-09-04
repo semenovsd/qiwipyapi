@@ -11,6 +11,7 @@ from requests import RequestException
 
 from .errors import QiwiError, payment_history_exception, PaymentHistoryError, main_exception, QiwiServerError
 from .models import Payment, PaymentInfo
+from .utils import retry
 
 
 class Wallet:
@@ -47,6 +48,7 @@ class Wallet:
 
     # TODO __rerp__
 
+    @retry(QiwiServerError, tries=3, delay=5)
     def _request(self, method, request_url, **kwargs):
         """ Запрос на сервер API
 
@@ -61,10 +63,6 @@ class Wallet:
             response = self._session.request(method=method, url=request_url, headers=kwargs.get('headers'),
                                              params=kwargs.get('params'), data=kwargs.get('data'),
                                              json=kwargs.get('json'))
-        except QiwiServerError:
-            # TODO Pattern Retry
-            # second retry after 5 sec
-            pass
         except RequestException as e:
             raise RequestException(e, method, request_url, kwargs)
         else:
