@@ -10,16 +10,31 @@ from qiwipyapi import Wallet
 
 \# для работы с QIWI Wallet API - wallet_toke и/или для QIWI P2P APi - p2p_sec_key
 
-wallet = Wallet(wallet_number, wallet_token, p2p_sec_key)
+\# For qiwi wallet
+
+wallet = get_wallet(wallet_number,  wallet_token=wallet_token)
+
+\# For p2p qiwi wallet
+
+wallet = get_wallet(wallet_number,  p2p_sec_key=p2p_sec_key)
 
 # Методы P2P Qiwi API
 Выставить счет для оплаты:
 
-bill = wallet.create_invoice()
-print(bill['payUrl'])  # link to payment from
+invoice = wallet.create_invoice()
+print(invoice)  # выводи ссылку на форму оплаты счёта
+
+\# также можно получить доступ ко всем параметрам счёта
+print(invoice['sum']['amount'])  # сумма счёта
+print(invoice['comment'])  # комментарии к счёту
+
 
 # Проверить стату счёта
 
+status = wallet.invoice_status(bill_id=invoice['billId'])
 
 # Отменить выставленный счёт
+
+wallet.cancel_invoice(bill_id=invoice['billId'])
+
 
