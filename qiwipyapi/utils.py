@@ -10,7 +10,7 @@ def retry(ExceptionToCheck, tries=4, delay=3, backoff=2, logger=None):
 
     :param ExceptionToCheck: the exception to check. may be a tuple of
         exceptions to check
-    :type ExceptionToCheck: Exception or tuple
+    :type ExceptionToCheck: QiwiServerError or tuple
     :param tries: number of times to try (not retry) before giving up
     :type tries: int
     :param delay: initial delay between retries in seconds

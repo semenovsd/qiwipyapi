@@ -2,5 +2,9 @@
 setup.cfg
 setup.py
 qiwipyapi/__init__.py
-qiwipyapi/exceptions.py
-qiwipyapi/wallet.py
+qiwipyapi/errors.py
+qiwipyapi/models.py
+qiwipyapi/request.py
+qiwipyapi/response.py
+qiwipyapi/utils.py
+qiwipyapi/wallets.py

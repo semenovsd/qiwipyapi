@@ -1,118 +1,64 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# import logging
-# TODO logs
+
+import uuid
+
+from .request import request
+from .response import response
+
+from .errors import payment_history_exception, PaymentHistoryError
+from .models import Payment, PaymentInfo, Invoice
+
 from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
-import uuid
-import requests
-from requests import RequestException
-
-from .errors import QiwiError, payment_history_exception, PaymentHistoryError, main_exception, QiwiServerError
-from .models import Payment, PaymentInfo
-from .utils import retry
 
 
 class Wallet:
-    """ Класс для работы с QIWI Wallet API и QIWI P2P API.
+
+    def __init__(self, wallet_number, token):
+        self._WALLET_NUMBER = wallet_number
+        self._TOKEN = token
+        self._HEADERS = {'Accept': 'application/json',
+                         'Content-Type': 'application/json',
+                         'Authorization': f'Bearer {self._TOKEN}'}
+
+    def _request(self, method, request_url, **kwargs):
+        return response(request(method, request_url, **kwargs))
+
+    def _payment_data(self, *args, **kwargs):
+        return Payment(*args, **kwargs)
+
+    def _invoice_data(self, *args, **kwargs):
+        return Invoice(*args, **kwargs)
+
+
+class P2PWallet(Wallet):
+    """ Класс для работы с QIWI P2P API.
     Поддерживает все методы и параметры api:
-    https://qiwi.com/api
     https://developer.qiwi.com/ru/p2p-payments
 
     :param _WALLET_NUMBER: Qiwi wallet number in format 79219876543 without +
-    :param _WALLET_TOKEN: Qiwi wallet token
     :param _P2P_SEC_KEY: Ключи создаются в личном кабинете в разделе "API" (на сайте p2p.qiwi.com)
     :return: New wallet
     """
 
-    def __init__(self, wallet_number, wallet_token=None, p2p_sec_key=None):
-        try:
-            assert wallet_token or p2p_sec_key
-        except AssertionError:
-            raise AssertionError('Enter wallet_token and/or p2p_token')
-        else:
-            self._WALLET_NUMBER = wallet_number
-            if wallet_token:
-                self._WALLET_TOKEN = wallet_token
-                self._HEADERS = {'Accept': 'application/json',
-                                 'Content-Type': 'application/json',
-                                 'Authorization': f'Bearer {wallet_token}'}
-            if p2p_sec_key:
-                self._P2P_SEC_KEY = p2p_sec_key
-                self._P2P_HEADERS = {'Accept': 'application/json',
-                                     'Content-Type': 'application/json',
-                                     'Authorization': f'Bearer {p2p_sec_key}'}
-            self._session = requests.Session()
-            # TODO add timeout and proxy
-
-    # TODO __rerp__
-
-    @retry(QiwiServerError, tries=3, delay=5)
-    def _request(self, method, request_url, **kwargs):
-        """ Запрос на сервер API
-
-        :param method:
-        :param request_url:
-        :param kwargs: Any of headers, params, data, json
-        :return:
-        :raises:
-            RequestException: if some errors in request
-        """
-        try:
-            response = self._session.request(method=method, url=request_url, headers=kwargs.get('headers'),
-                                             params=kwargs.get('params'), data=kwargs.get('data'),
-                                             json=kwargs.get('json'))
-        except RequestException as e:
-            raise RequestException(e, method, request_url, kwargs)
-        else:
-            return self._response(response)
-
-    def _response(self, response):
-        """ Обработка ответа
-
-        :param response:
-        :return:
-        :raises:
-            QiwiException: if some errors in response
-        """
-        if response.status_code in [200, 201]:
-            try:
-                response_json = response.json()
-                return response_json
-            except AttributeError:
-                return response
-        else:
-            e = main_exception(response)
-            raise QiwiError(e, response, self._session.params)  # or self.session.__dict__ ?
-
-    # P2P QIWI API
-    def create_invoice(self, amount: dict, bill_id=None,
-                       expiration_date_time=datetime.now(tz=tzlocal()) + timedelta(hours=1), **kwargs):
+    def create_invoice(self, value, bill_id=None,
+                       expirationDateTime=datetime.now(tz=tzlocal()) + timedelta(hours=1), **kwargs):
         """ Выставить новый счёт
         https://developer.qiwi.com/ru/p2p-payments/#create
 
-        :param amount: данные о сумме счета
+        :param value: данные о сумме счета
         :param bill_id: уникальный идентификатор счета в вашей системе
-        :param expiration_date_time:
+        :param expirationDateTime:
         :param kwargs: дополнительные параметры
         :return: ??? подумать, что именно возвращать (урл или весь ответ) или вообще отдавать объект
         """
         method = 'put'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id if bill_id else uuid.uuid1()}'
-        json_data = dict()
-        json_data.update(amount)
-        json_data['expirationDateTime'] = expiration_date_time.strftime('%Y-%m-%dT%H:%m:%S+00:00')
-        json_data.update(kwargs)
-        # При выставление счёта в ответе приходит payUrl к ссылке можно добавить параметры:
-        # https://developer.qiwi.com/ru/p2p-payments/  # option
-        # paySource
-        # allowedPaySources
-        # successUrl
-        # lifetime
-        # TODO Можно сделать отдельный класс для счёта и определить __rerp__, что бы можно было выводить
-        #  ссылку и иметь доступк ко всем атрибутам счёта
-        return self._request(method, request_url, headers=self._P2P_HEADERS, json=json_data)
+        json_data = self._payment_data(value, expirationDateTime=expirationDateTime, *kwargs)
+        r = self._request(method, request_url, headers=self._HEADERS, json=json_data.to_json())
+        return self._invoice_data(r)
 
     def invoice_status(self, bill_id):
         """ Проверка счёта
@@ -125,8 +71,7 @@ class Wallet:
         """
         method = 'get'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id}'
-        # TODO возвращать данные по счёту в случае успеха и кидать ошибку, если такого счёта нет.
-        return self._request(method, request_url, headers=self._P2P_HEADERS)
+        return self._request(method, request_url, headers=self._HEADERS)
 
     def cancel_invoice(self, bill_id):
         """ Отмена счёта
@@ -137,10 +82,21 @@ class Wallet:
         """
         method = 'post'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id}/reject'
-        # TODO возвращать True в случае успеха и кидать ошибку, если такого счёта нет.
-        return self._request(method, request_url, headers=self._P2P_HEADERS)
+        return self._request(method, request_url, headers=self._HEADERS)
 
-    # Wallet Qiwi API
+
+class QIWIWallet(Wallet):
+    """ Класс для работы с QIWI Wallet API и QIWI P2P API.
+    Поддерживает все методы и параметры api:
+    https://qiwi.com/api
+    https://developer.qiwi.com/ru/p2p-payments
+
+    :param _WALLET_NUMBER: Qiwi wallet number in format 79219876543 without +
+    :param _WALLET_TOKEN: Qiwi wallet token
+    :param _P2P_SEC_KEY: Ключи создаются в личном кабинете в разделе "API" (на сайте p2p.qiwi.com)
+    :return: New wallet
+    """
+
     def wallet_profile(self, authInfoEnabled: bool = True, contractInfoEnabled: bool = True,
                        userInfoEnabled: bool = True):
         """ Метод возвращает информацию о вашем профиле - наборе пользовательских данных и настроек вашего QIWI кошелька.
@@ -260,6 +216,7 @@ class Wallet:
         # Или делать на каждую ошибку своё исключение
         # https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
         r = self._request(method, request_url, headers=self._HEADERS, params=params).get('data')
+        # TODO обрабатывать здесь или в response()
         if r == '':  # ответ получен без ошибки, но данные пусты
             e = payment_history_exception(r)
             raise PaymentHistoryError(e)
@@ -745,17 +702,17 @@ class Wallet:
         json_data['serverNotificationsUrl'] = serverNotificationsUrl
         return self._request(method, request_url, headers=self._HEADERS, json=json_data)
 
-    def list_invoices(self, rows: int, min_creation_datetime, max_creation_datetime, next_id,
-                      next_creation_datetime) -> list:
-        """ Список счетов. Метод получения списка неоплаченных счетов вашего кошелька. 
-         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search
-        
+    def list_bills(self, rows: int = None, min_creation_datetime=None, max_creation_datetime=None, next_id=None,
+                   next_creation_datetime=None) -> list:
+        """ Список счетов. Метод получения списка неоплаченных счетов вашего кошелька.
+        https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#list_invoice
+
         :param rows: Максимальное число счетов в ответе.
         :param min_creation_datetime: Нижняя временная граница для поиска счетов, Unix-time
         :param max_creation_datetime: Верхняя временная граница для поиска счетов, Unix-time
         :param next_id: Начальный идентификатор счета для поиска.
-        :param next_creation_datetime: Начальное время для поиска (возвращаются только счета, 
-        выставленные ранее этого времени), Unix-time. 
+        :param next_creation_datetime: Начальное время для поиска (возвращаются только счета,
+        выставленные ранее этого времени), Unix-time.
         :return: список неоплаченных счетов вашего кошелька, соответствующих заданному фильтру
         """
         method = 'get'
@@ -767,9 +724,9 @@ class Wallet:
         params['max_creation_datetime'] = max_creation_datetime
         params['next_id'] = next_id
         params['next_creation_datetime'] = next_creation_datetime
-        return self._request(method, request_url, headers=self._HEADERS, params=params)
+        return self._request(method, request_url, headers=self._HEADERS, params=params)['bills']
 
-    def pay_invoice(self, invoice_uid: str, currency: str):
+    def pay_bill(self, invoice_uid: str, currency: str):
         """ Оплата счета. Выполнение безусловной оплаты счета без SMS-подтверждения.
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#paywallet_invoice
         """
@@ -780,7 +737,7 @@ class Wallet:
         json_data['currency'] = currency
         return self._request(method, request_url, headers=self._HEADERS, json=json_data)
 
-    def invoice_reject(self, id: str):
+    def reject_bill(self, id: str):
         """ Отмена неоплаченного счета. Метод отклоняет неоплаченный счет.
         При этом счет становится недоступным для оплаты.
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#search

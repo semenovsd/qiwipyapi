@@ -25,31 +25,16 @@ exception_codes = {'400': 'Ошибка синтаксиса запроса (н�
 
 def main_exception(response):
     # TODO make check method for choice errors dict
-    if response.get('status_code') == 500:
+    if response.status_code == 500:
         raise QiwiServerError()
-    if response.get('status_code') == 404:
-        return {response.status_code: f'{response.serviceName} {response.errorCode} {response.description}'}
-    # {
-    #     "serviceName": "invoicing",
-    #     "errorCode": "auth.unauthorized",
-    #     "description": "Неверные аутентификационные данные",
-    #     "userMessage": "",
-    #     "datetime": "2018-04-09T18:31:42+03:00",
-    #     "traceId": ""
-    # }
-    #     if response.status_code == 404:
-    #         # История платежей, Информация о транзакции, Отправка квитанции
-    #         message = 'Не найдена транзакция или отсутствуют платежи с указанными признаками'
-    #         pass
-    #     if response.status_code == 404:
-    #         # Балансы, Профиль пользователя, Идентификация пользователя
-    #         message = 'Не найден кошелек'
-    #         pass
-    #     if response.status_code == 404:
-    #         # Оплата / Отмена счета
-    #         message = 'Не найден счет'
-    #         pass
-    return exception_codes.get('response.status_code') or {response.status_code: 'Неизвестная ошибка'}
+    if response.status_code == 404:
+        try:
+            response = response.json()
+            return response['description']
+            # response['serviceName'], response['errorCode'],
+        except AttributeError:
+            return response
+    return exception_codes.get(str(response.status_code)) or {response.status_code: f'Неизвестная ошибка: {response}'}
 
 
 # Следующие ошибки возвращаются на запросы истории платежей и информации о транзакции в параметре errorCode ответа:
