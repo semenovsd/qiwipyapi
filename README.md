@@ -8,10 +8,10 @@ pip install qiwipyapi
 # Use
 from qiwipyapi import Wallet
 
-QIWI_SEC_TOKEN = '***'
-QIWI_TOKEN = '***'
-wallet_number = '***' \# without +
-cc_number = '***'
+QIWI_SEC_TOKEN = 'xxx'
+QIWI_TOKEN = 'xxx'
+wallet_number = 'xxxxxxxxxx' \# without +
+cc_number = 'xxxxxxxxxxxxxxxx'
 
 \# For qiwi wallet
 wallet = Wallet(wallet_number, wallet_token=QIWI_TOKEN)
