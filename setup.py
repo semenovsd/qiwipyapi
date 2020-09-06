@@ -3,7 +3,7 @@ from distutils.core import setup
 setup(
     name='qiwipyapi',
     keywords='qiwipyapi',
-    version='0.2',
+    version='0.23',
     packages=['qiwipyapi'],
     url='https://github.com/semenovsd/qiwipyapi',
     license='MIT',
