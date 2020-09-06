@@ -10,4 +10,4 @@ def response(response):
             return response
     else:
         e = main_exception(response)
-        raise QiwiError(e, response)
+        raise QiwiError(e, response.text)

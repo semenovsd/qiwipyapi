@@ -8,7 +8,7 @@ from .request import request
 from .response import response
 
 from .errors import payment_history_exception, PaymentHistoryError
-from .models import Payment, PaymentInfo, Invoice
+from .models import Payment, PaymentInfo
 
 from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
@@ -19,6 +19,7 @@ class BaseWallet:
     Определяёт __init__ и общие методы кошельков.
 
     """
+
     def __init__(self, wallet_number, token):
         self._WALLET_NUMBER = wallet_number
         self._TOKEN = token
@@ -29,11 +30,11 @@ class BaseWallet:
     def _request(self, method, request_url, **kwargs):
         return response(request(method, request_url, **kwargs))
 
-    def _payment_data(self, *args, **kwargs):
-        return Payment(*args, **kwargs)
+    def _payment(self, *args, **kwargs):
+        return Payment(*args, **kwargs).to_json()
 
-    def _invoice_data(self, *args, **kwargs):
-        return Invoice(*args, **kwargs)
+    def _payment_info(self, *args, **kwargs):
+        return PaymentInfo(*args, **kwargs)
 
 
 class P2PWallet(BaseWallet):
@@ -47,7 +48,7 @@ class P2PWallet(BaseWallet):
     """
 
     def create_invoice(self, value, bill_id=None,
-                       expirationDateTime=datetime.now(tz=tzlocal()) + timedelta(hours=1), **kwargs):
+                       expirationDateTime=None, **kwargs):
         """ Выставить новый счёт
         https://developer.qiwi.com/ru/p2p-payments/#create
 
@@ -59,9 +60,13 @@ class P2PWallet(BaseWallet):
         """
         method = 'put'
         request_url = f'https://api.qiwi.com/partner/bill/v1/bills/{bill_id if bill_id else uuid.uuid1()}'
-        json_data = self._payment_data(value, expirationDateTime=expirationDateTime, *kwargs)
-        r = self._request(method, request_url, headers=self._HEADERS, json=json_data.to_json())
-        return self._invoice_data(r)
+        json_data = dict()
+        json_data['amount'] = {'value': value, 'currency': 'RUB'}
+        if expirationDateTime is None:
+            expirationDateTime = datetime.now(tz=tzlocal()) + timedelta(hours=1)
+            json_data['expirationDateTime'] = expirationDateTime.strftime('%Y-%m-%dT%H:%m:%S+00:00')
+        json_data.update(kwargs)
+        return self._request(method, request_url, headers=self._HEADERS, json=json_data)
 
     def invoice_status(self, bill_id):
         """ Проверка счёта
@@ -293,7 +298,7 @@ class QIWIWallet(BaseWallet):
         json_data['email'] = email
         return self._request(method, request_url, headers=self._HEADERS, json=json_data)
 
-    def get_balances(self) -> list:
+    def list_balances(self) -> dict:
         """ Список балансов
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balances_list
 
@@ -301,9 +306,10 @@ class QIWIWallet(BaseWallet):
         """
         method = 'get'
         request_url = f'https://edge.qiwi.com/funding-sources/v2/persons/{self._WALLET_NUMBER}/accounts'
+        # TODO сделать отдельный класс балансы
         return self._request(method, request_url, headers=self._HEADERS)
 
-    def balance_create(self, alias: str):
+    def create_balance(self, alias: str):
         """ Создание баланса. Метод создает новый счет и баланс в вашем QIWI Кошельке.
         Список доступных для создания счетов можно получить с помощью метода funding_offer.
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#balance_create
@@ -477,11 +483,12 @@ class QIWIWallet(BaseWallet):
         payment_info = PaymentInfo(r['PaymentInfo'])
         return payment_info
 
-    def payment_to_card(self, card_number: str, provider_id: str, **kwargs):
+    def payment_to_card(self, amount, card_number: str, provider_id: str, **kwargs):
         """ Перевод на карту. Метод выполняет денежный перевод на карты платежных систем Visa, MasterCard или МИР.
         Код провайдера можно узнать методом search_provider_for_card.
         https://developer.qiwi.com/ru/qiwi-wallet-personal/index.html#cards
 
+        :param amount:
         :param card_number:
         :param provider_id:
         :param kwargs:
@@ -489,14 +496,13 @@ class QIWIWallet(BaseWallet):
         """
         method = 'post'
         request_url = f'https://edge.qiwi.com/sinap/api/v2/terms/{provider_id}/payments'
-        json_data = dict()
-        json_data['id'] = kwargs.get('id') or str(uuid.uuid1())
-        json_data['paymentMethod'] = kwargs.get('paymentMethod') or {'type': 'Account', 'accountId': '643'}
-        json_data['fields'] = dict()
-        json_data['fields']['account'] = card_number
-        json_data.update(kwargs)
+        fields = {'account': card_number}
+        json_data = self._payment(amount=amount, fields=fields, *kwargs)
+        print(json_data)
         # TODO кидать ошибку, если не хватает денег и всё что не связанно с корректностью данных
-        return self._request(method, request_url, headers=self._HEADERS, json=json_data).get('PaymentInfo')
+        r = self._request(method, request_url, headers=self._HEADERS, json=json_data)
+        print(self._payment_info(r))
+        return r
 
     def transfer_to_card(self, provider_id: str, account: str, account_type: str, mfo: str, lname: str,
                          fname: str, mname: str, exp_date: str = None):
