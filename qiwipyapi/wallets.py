@@ -14,8 +14,11 @@ from datetime import datetime, timedelta
 from dateutil.tz import tzlocal
 
 
-class Wallet:
+class BaseWallet:
+    """ Родительский класс для работы с QIWI Wallet API и QIWI P2P API.
+    Определяёт __init__ и общие методы кошельков.
 
+    """
     def __init__(self, wallet_number, token):
         self._WALLET_NUMBER = wallet_number
         self._TOKEN = token
@@ -33,7 +36,7 @@ class Wallet:
         return Invoice(*args, **kwargs)
 
 
-class P2PWallet(Wallet):
+class P2PWallet(BaseWallet):
     """ Класс для работы с QIWI P2P API.
     Поддерживает все методы и параметры api:
     https://developer.qiwi.com/ru/p2p-payments
@@ -85,11 +88,10 @@ class P2PWallet(Wallet):
         return self._request(method, request_url, headers=self._HEADERS)
 
 
-class QIWIWallet(Wallet):
-    """ Класс для работы с QIWI Wallet API и QIWI P2P API.
+class QIWIWallet(BaseWallet):
+    """ Класс для работы с QIWI Wallet API.
     Поддерживает все методы и параметры api:
     https://qiwi.com/api
-    https://developer.qiwi.com/ru/p2p-payments
 
     :param _WALLET_NUMBER: Qiwi wallet number in format 79219876543 without +
     :param _WALLET_TOKEN: Qiwi wallet token

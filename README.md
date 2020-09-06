@@ -12,11 +12,11 @@ from qiwipyapi import Wallet
 
 \# For qiwi wallet
 
-wallet = get_wallet(wallet_number,  wallet_token=wallet_token)
+wallet = Wallet(wallet_number,  wallet_token=wallet_token)
 
 \# For p2p qiwi wallet
 
-wallet = get_wallet(wallet_number,  p2p_sec_key=p2p_sec_key)
+wallet = Wallet(wallet_number,  p2p_sec_key=p2p_sec_key)
 
 # Методы P2P Qiwi API
 Выставить счет для оплаты:

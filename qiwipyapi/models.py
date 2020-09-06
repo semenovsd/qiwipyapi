@@ -60,8 +60,7 @@ class Invoice:
     # allowedPaySources
     # successUrl
     # lifetime
-    # TODO Можно сделать отдельный класс для счёта и определить __rerp__, что бы можно было выводить
-    #  ссылку и иметь доступк ко всем атрибутам счёта
+
     def __init__(self, response):
         self.__dict__ = response
 
